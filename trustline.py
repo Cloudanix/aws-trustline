@@ -669,21 +669,29 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(argv: list[str] | None = None, boto3_session: boto3.Session | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
 
     if args.skip_iam and args.skip_s3:
         console.print("[bold red]Error: Cannot skip both IAM and S3 analysis.[/bold red]")
-        return 1
+        return {}
 
     session_kwargs: dict[str, str] = {}
     if args.profile:
         session_kwargs["profile_name"] = args.profile
     if args.region:
-        session_kwargs["region_name"] = args.region
-    session = boto3.Session(**session_kwargs)
+        session_kwargs["region_name"] = args.region.replace(" ", "")
 
+    if session_kwargs:
+        session = boto3.Session(
+            aws_access_key_id=boto3_session.get_credentials().access_key if boto3_session.get_credentials() else None,
+            aws_secret_access_key=boto3_session.get_credentials().secret_key if boto3_session.get_credentials() else None,
+            aws_session_token=boto3_session.get_credentials().token if boto3_session.get_credentials() else None,
+            **session_kwargs,
+        )
+    else:
+        session = boto3_session
     try:
         console.print(
             Panel(
@@ -703,10 +711,10 @@ def main(argv: list[str] | None = None) -> int:
         )
 
         console.print("[bold]Loading trusted AWS accounts...[/bold]")
-        trusted_accounts, org_error = fetch_trusted_accounts(session, args.trusted_accounts)
-
-        account_aliases = get_account_aliases(session)
-
+        # trusted_accounts, org_error = fetch_trusted_accounts(session, args.trusted_accounts)
+        trusted_accounts = []
+        # account_aliases = get_account_aliases(session)
+        account_aliases = []
         iam_known_vendors: dict = {}
         iam_unknown_accounts: dict = {}
         iam_trusted_entities: dict = {}
@@ -733,43 +741,25 @@ def main(argv: list[str] | None = None) -> int:
                 )
             )
 
-        display_results(
-            iam_known_vendors,
-            iam_unknown_accounts,
-            iam_trusted_entities,
-            iam_vulnerable_roles,
-            s3_known_vendors,
-            s3_unknown_accounts,
-            s3_trusted_entities,
-            account_aliases,
-        )
-
-        os.makedirs(args.output, exist_ok=True)
-
-        report_file = generate_report(
-            iam_known_vendors,
-            iam_unknown_accounts,
-            iam_trusted_entities,
-            iam_vulnerable_roles,
-            s3_known_vendors,
-            s3_unknown_accounts,
-            s3_trusted_entities,
-            account_aliases,
-            output_dir=args.output,
-            org_error=org_error,
-        )
-        console.print(f"\n[bold green]Report generated: {report_file}[/bold green]")
+        return {
+            "iam_known_vendors": iam_known_vendors,
+            "iam_unknown_accounts": iam_unknown_accounts,
+            "iam_trusted_entities": iam_trusted_entities,
+            "iam_vulnerable_roles": iam_vulnerable_roles,
+            "s3_known_vendors": s3_known_vendors,
+            "s3_unknown_accounts": s3_unknown_accounts,
+            "s3_trusted_entities": s3_trusted_entities,
+            "account_aliases": account_aliases,
+        }
 
     except KeyboardInterrupt:
         console.print("\n[yellow]Interrupted by user.[/yellow]")
-        return 130
+        return {}
     except Exception as e:
         console.print(f"[bold red]Error: {e}[/bold red]")
         if args.verbose:
             console.print_exception()
-        return 1
-
-    return 0
+        return {}
 
 
 if __name__ == "__main__":
