@@ -669,7 +669,7 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: list[str] | None = None, session: boto3.Session | None = None) -> int:
+def main(argv: list[str] | None = None, boto3_session: boto3.Session | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
 
@@ -681,9 +681,17 @@ def main(argv: list[str] | None = None, session: boto3.Session | None = None) ->
     if args.profile:
         session_kwargs["profile_name"] = args.profile
     if args.region:
-        session_kwargs["region_name"] = args.region
-        session.region_name = args.region
+        session_kwargs["region_name"] = args.region.replace(" ", "")
 
+    if session_kwargs:
+        session = boto3.Session(
+            aws_access_key_id=boto3_session.get_credentials().access_key if boto3_session.get_credentials() else None,
+            aws_secret_access_key=boto3_session.get_credentials().secret_key if boto3_session.get_credentials() else None,
+            aws_session_token=boto3_session.get_credentials().token if boto3_session.get_credentials() else None,
+            **session_kwargs,
+        )
+    else:
+        session = boto3_session
     try:
         console.print(
             Panel(
@@ -703,10 +711,10 @@ def main(argv: list[str] | None = None, session: boto3.Session | None = None) ->
         )
 
         console.print("[bold]Loading trusted AWS accounts...[/bold]")
-        trusted_accounts, org_error = fetch_trusted_accounts(session, args.trusted_accounts)
-
-        account_aliases = get_account_aliases(session)
-
+        # trusted_accounts, org_error = fetch_trusted_accounts(session, args.trusted_accounts)
+        trusted_accounts = []
+        # account_aliases = get_account_aliases(session)
+        account_aliases = []
         iam_known_vendors: dict = {}
         iam_unknown_accounts: dict = {}
         iam_trusted_entities: dict = {}
